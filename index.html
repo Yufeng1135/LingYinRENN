@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>菱音RENNの歌单</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#7C3AED', // 主色调：紫色
+                        secondary: '#F3E8FF', // 辅助色：浅紫
+                        dark: '#1F2937', // 深色文本
+                        light: '#F9FAFB', // 浅色背景
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .song-item-hover {
+                @apply hover:bg-secondary/50 transition-all duration-300;
+            }
+            .btn-primary {
+                @apply bg-primary text-white px-3 py-1 rounded-md hover:bg-primary/90 transition-all;
+            }
+            .btn-secondary {
+                @apply bg-gray-200 text-dark px-3 py-1 rounded-md hover:bg-gray-300 transition-all;
+            }
+            .input-style {
+                @apply border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50;
+            }
+            /* 隐藏临时复制输入框（已无用，保留避免报错） */
+            .copy-temp {
+                @apply absolute top-[-100px] left-0 w-0 h-0 opacity-0 pointer-events-none;
+            }
+            /* 表格单元格统一对齐与内边距优化（增加横向间距，避免拥挤） */
+            .table-cell {
+                @apply flex items-center justify-start md:justify-start py-1 px-1;
+            }
+            .table-cell-center {
+                @apply flex items-center justify-center py-1 px-1;
+            }
+            /* 新增：强制文字换行+溢出省略，适配小屏幕 */
+            .content-wrap {
+                @apply whitespace-normal break-words truncate;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <!-- 隐藏密码框（双击页面唤醒） -->
+    <div id="passwordModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg w-80 shadow-xl">
+            <h3 class="text-lg font-bold text-dark mb-4">请输入管理密码</h3>
+            <input type="password" id="passwordInput" class="input-style w-full mb-4" placeholder="输入密码">
+            <div class="flex justify-end gap-3">
+                <button id="cancelPassword" class="btn-secondary">取消</button>
+                <button id="confirmPassword" class="btn-primary">确认</button>
+            </div>
+            <p id="passwordError" class="text-red-500 text-sm mt-2 hidden">密码错误，请重试</p>
+        </div>
+    </div>
+    <!-- 自定义设置模态框 -->
+    <div id="customizeModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-40 hidden">
+        <div class="bg-white p-6 rounded-lg w-[90%] max-w-2xl shadow-xl">
+            <h3 class="text-xl font-bold text-dark mb-4 flex items-center">
+                <i class="fa fa-cog mr-2 text-primary"></i> 自定义歌单设置
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">歌单标题</label>
+                    <input type="text" id="customTitle" class="input-style w-full" placeholder="输入歌单标题">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">管理密码（默认：lymmyasashii）</label>
+                    <input type="password" id="customPassword" class="input-style w-full" placeholder="修改管理密码">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">歌单简介</label>
+                    <textarea id="customDesc" class="input-style w-full h-24" placeholder="输入歌单简介"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">自定义头像</label>
+                    <div class="flex items-center gap-3">
+                        <label for="avatarUpload" class="btn-primary cursor-pointer">
+                            <i class="fa fa-upload mr-1"></i> 选择图片
+                        </label>
+                        <input type="file" id="avatarUpload" accept="image/*" class="hidden">
+                        <span id="avatarFileName" class="text-sm text-gray-500">未选择文件</span>
+                    </div>
+                    <div class="mt-3">
+                        <img id="previewAvatar" class="w-16 h-16 rounded-full object-cover border-2 border-primary" src="https://picsum.photos/200/200" alt="歌单头像">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="cancelCustomize" class="btn-secondary">取消</button>
+                <button id="saveCustomize" class="btn-primary">保存设置</button>
+            </div>
+        </div>
+    </div>
+    <!-- 添加歌曲模态框 -->
+    <div id="addSongModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-40 hidden">
+        <div class="bg-white p-6 rounded-lg w-[90%] max-w-md shadow-xl">
+            <h3 class="text-xl font-bold text-dark mb-4 flex items-center">
+                <i class="fa fa-music mr-2 text-primary"></i> 添加新歌曲
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">歌曲名称</label>
+                    <input type="text" id="songName" class="input-style w-full" placeholder="输入歌曲名称">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">歌手</label>
+                    <input type="text" id="songSinger" class="input-style w-full" placeholder="输入歌手名称">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">类别（可选）</label>
+                    <input type="text" id="songCategory" class="input-style w-full" placeholder="输入歌曲类别（如流行、摇滚）">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="cancelAddSong" class="btn-secondary">取消</button>
+                <button id="confirmAddSong" class="btn-primary">添加歌曲</button>
+            </div>
+        </div>
+    </div>
+    <!-- 临时复制输入框（保留避免报错，实际已无用） -->
+    <input type="text" id="copyTempInput" class="copy-temp" readonly>
+    <!-- 页面头部 -->
+    <header class="bg-white shadow-sm py-4 px-6">
+        <div class="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <img id="headerAvatar" class="w-16 h-16 md:w-20 md:h-20 rounded-full object-cover border-3 border-primary shadow-md" src="https://picsum.photos/200/200" alt="歌单头像">
+                <div>
+                    <h1 id="headerTitle" class="text-2xl md:text-3xl font-bold text-dark">菱音RENNの歌单</h1>
+                    <p id="headerDesc" class="text-gray-600 mt-1 max-w-md">
+                        收藏喜欢的歌曲，记录心动的瞬间～ 双击页面解锁管理权限
+                    </p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button id="customizeBtn" class="btn-secondary hidden">
+                    <i class="fa fa-cog mr-1"></i> 自定义设置
+                </button>
+                <button id="addSongBtn" class="btn-secondary hidden">
+                    <i class="fa fa-plus mr-1"></i> 添加歌曲
+                </button>
+                <button id="viewModeBtn" class="btn-primary">
+                    <i class="fa fa-eye mr-1"></i> 仅查看模式
+                </button>
+            </div>
+        </div>
+    </header>
+    <!-- 歌单主体 -->
+    <main class="flex-1 container mx-auto py-8 px-6">
+        <div class="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <!-- 新增搜索框 -->
+            <div class="w-full md:w-auto flex items-center gap-2">
+                <i class="fa fa-search text-primary"></i>
+                <input type="text" id="searchInput" class="input-style w-full md:w-64" placeholder="搜索歌曲/歌手/类别...">
+            </div>
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="text-gray-700">
+                    <i class="fa fa-music text-primary mr-1"></i> 歌曲总数：<span id="songCount">0</span> 首
+                </div>
+                <div class="text-sm text-gray-500">
+                    最后更新：<span id="lastUpdate">2024-01-01</span>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+            <!-- 表头：取消序号列，调整列宽占比（原12列分配为：歌曲名称6列、歌手4列、类别2列） -->
+            <div id="songTableHeader" class="grid grid-cols-12 bg-gray-100 py-3 px-4 font-medium text-gray-700 gap-2">
+                <div class="col-span-6 pl-2 table-cell">
+                    <span class="truncate">歌曲名称</span>
+                </div>
+                <div class="col-span-4 table-cell">
+                    <span class="truncate">歌手</span>
+                </div>
+                <div class="col-span-2 table-cell">
+                    <span class="truncate">类别</span>
+                </div>
+            </div>
+            <!-- 歌单容器（空容器，JS动态渲染） -->
+            <div id="songList" class="divide-y divide-gray-100">
+            </div>
+            <div id="emptySongTip" class="py-20 text-center text-gray-500 hidden">
+                <i class="fa fa-headphones text-4xl mb-3 opacity-50"></i>
+                <p>歌单还是空的～ 快去添加喜欢的歌曲吧！</p>
+            </div>
+            <!-- 搜索无结果提示 -->
+            <div id="searchNoResultTip" class="py-20 text-center text-gray-500 hidden">
+                <i class="fa fa-search-minus text-4xl mb-3 opacity-50"></i>
+                <p>没有找到匹配的歌曲，请尝试其他关键词～</p>
+            </div>
+        </div>
+    </main>
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white py-4 px-6 mt-8">
+        <div class="container mx-auto text-center text-sm opacity-70">
+            <p>菱音RENNの歌单 © 2024 | 双击页面唤醒密码框 | 支持自定义设置</p>
+        </div>
+    </footer>
+    <script>
+        // 全局状态（移除本地存储，使用默认值）
+        const state = {
+            isAdmin: false,
+            password: 'lymmyasashii', // 默认密码
+            songs: [
+                { id: 1, name: '晴天', singer: '周杰伦', category: '国语' },
+                { id: 2, name: '花海', singer: '周杰伦', category: '国语' },
+                { id: 3, name: '简单爱', singer: '周杰伦', category: '国语' },
+                { id: 4, name: '珊瑚海', singer: '周杰伦、梁心颐', category: '国语' },
+                { id: 5, name: '告白气球', singer: '周杰伦', category: '国语' },
+                { id: 6, name: '可惜没如果', singer: '林俊杰', category: '国语' },
+                { id: 7, name: '学不会', singer: '林俊杰', category: '国语' },
+                { id: 8, name: '当你', singer: '王心凌', category: '国语' },
+                { id: 9, name: '倒带', singer: '蔡依林', category: '国语' },
+                { id: 10, name: '心引力', singer: '王俊凯、蔡依林', category: '国语' },
+                { id: 11, name: '永不失联的爱', singer: '周兴哲', category: '国语' },
+                { id: 12, name: '怎么了', singer: '周兴哲', category: '国语' },
+                { id: 13, name: '爱你', singer: '王心凌', category: '国语' },
+                { id: 14, name: '走马', singer: '陈粒', category: '国语' },
+                { id: 15, name: '光', singer: '陈粒', category: '国语' },
+                { id: 16, name: '易燃易爆炸', singer: '陈粒', category: '国语' },
+                { id: 17, name: '素颜', singer: '许嵩、何曼婷', category: '国语' },
+                { id: 18, name: '有何不可', singer: '许嵩', category: '国语' },
+                { id: 19, name: '有点甜', singer: '汪苏泷、BY2', category: '国语' },
+                { id: 20, name: '后会无期', singer: '邓紫棋', category: '国语' },
+                { id: 21, name: '他的爱', singer: '汪苏泷', category: '国语' },
+                { id: 22, name: '一笑倾城', singer: '汪苏泷', category: '国语' },
+                { id: 23, name: '坏女孩', singer: '徐良、小凌', category: '国语' },
+                { id: 24, name: '夏天的风', singer: '温岚', category: '国语' },
+                { id: 25, name: '那女孩对我说', singer: '黄义达', category: '国语' },
+                { id: 26, name: '雨爱', singer: '杨丞琳', category: '国语' },
+                { id: 27, name: '我爱他', singer: '叮当', category: '国语' },
+                { id: 28, name: '红色高跟鞋', singer: '蔡健雅', category: '国语' },
+                { id: 29, name: '小城夏天', singer: 'LBI利比', category: '国语' },
+                { id: 30, name: '起风了', singer: '买辣椒也用券', category: '国语' },
+                { id: 31, name: '水星记', singer: '郭顶', category: '国语' },
+                { id: 32, name: '慢冷', singer: '梁静茹', category: '国语' },
+                { id: 33, name: '花海在哪里', singer: '未知', category: '国语' },
+                { id: 34, name: '就忘了吧', singer: '1K', category: '国语' },
+                { id: 35, name: '心动夏悸', singer: '未知', category: '国语' },
+                { id: 36, name: '浪漫分店', singer: '未知', category: '国语' },
+                { id: 37, name: '指纹', singer: '胡歌', category: '国语' },
+                { id: 38, name: '记得', singer: '张惠妹', category: '国语' },
+                { id: 39, name: '心墙', singer: '郭静', category: '国语' },
+                { id: 40, name: 'BINGBIAN病变', singer: 'Cubi、Fi9江澈、Younglife', category: '国语' },
+                { id: 41, name: '爱错', singer: '王力宏', category: '国语' },
+                { id: 42, name: '偏爱', singer: '张芸京', category: '国语' },
+                { id: 43, name: '锦鲤抄', singer: '银临、云の泣', category: '国语' },
+                { id: 44, name: '寄明月', singer: 'SING女团', category: '国语' },
+                { id: 45, name: '那些年', singer: '胡夏', category: '国语' },
+                { id: 46, name: '甜甜的', singer: '周杰伦', category: '国语' },
+                { id: 47, name: '情非得已', singer: '庾澄庆', category: '国语' },
+                { id: 48, name: '错的人', singer: '萧亚轩', category: '国语' },
+                { id: 49, name: '三国杀', singer: '汪苏泷', category: '国语' },
+                { id: 50, name: '阴阳先生', singer: '未知', category: '国语' },
+                { id: 51, name: '普通disco', singer: '洛天依、言和', category: '国语' },
+                { id: 52, name: '红装', singer: '徐良、阿悄', category: '国语' },
+                { id: 53, name: '友情出演', singer: '徐良、小凌', category: '国语' },
+                { id: 54, name: '不分手的恋爱', singer: '汪苏泷', category: '国语' },
+                { id: 55, name: '苦笑', singer: '汪苏泷', category: '国语' },
+                { id: 56, name: '断桥残雪', singer: '许嵩', category: '国语' },
+                { id: 57, name: '你若成风', singer: '许嵩、莫诗旎', category: '国语' },
+                { id: 58, name: '灰色头像', singer: '汪苏泷', category: '国语' },
+                { id: 59, name: '倒数', singer: '邓紫棋', category: '国语' },
+                { id: 60, name: '光年之外', singer: '邓紫棋', category: '国语' },
+                { id: 61, name: '曹操', singer: '林俊杰', category: '国语' },
+                { id: 62, name: '流星雨', singer: 'F4', category: '国语' },
+                { id: 63, name: '青花瓷', singer: '周杰伦', category: '国语' },
+                { id: 64, name: '本草纲目', singer: '周杰伦', category: '国语' },
+                { id: 65, name: '十年', singer: '陈奕迅', category: '国语' },
+                { id: 66, name: '红玫瑰', singer: '陈奕迅', category: '国语' },
+                { id: 67, name: '不要说话', singer: '陈奕迅', category: '国语' },
+                { id: 68, name: '圣诞结', singer: '陈奕迅', category: '国语' },
+                { id: 69, name: 'K歌之王', singer: '陈奕迅', category: '国语' },
+                { id: 70, name: '淘汰', singer: '陈奕迅', category: '国语' },
+                { id: 71, name: '突然想起你', singer: '萧亚轩', category: '国语' },
+                { id: 72, name: '单选', singer: '未知', category: '国语' },
+                { id: 73, name: '逆光', singer: '孙燕姿', category: '国语' },
+                { id: 74, name: '小幸运', singer: '田馥甄', category: '国语' },
+                { id: 75, name: '欧若拉', singer: '张韶涵', category: '国语' },
+                { id: 76, name: '我怀念的', singer: '孙燕姿', category: '国语' },
+                { id: 77, name: '恋爱ing', singer: '五月天', category: '国语' },
+                { id: 78, name: '倔强', singer: '五月天', category: '国语' },
+                { id: 79, name: '突然好想你', singer: '五月天', category: '国语' },
+                { id: 80, name: '最勇敢的幸福', singer: 'S.H.E、JS', category: '国语' },
+                { id: 81, name: '只对你有感觉', singer: '飞轮海、田馥甄', category: '国语' },
+                { id: 82, name: 'ロメオとシンデレラ（罗密欧与灰姑娘）', singer: '初音未来', category: '日语' },
+                { id: 83, name: 'メランコリック（忧郁的心情）', singer: 'GUMI', category: '日语' },
+                { id: 84, name: '天ノ弱', singer: 'GUMI', category: '日语' },
+                { id: 85, name: '深海少女', singer: '初音未来', category: '日语' },
+                { id: 86, name: 'モザイクロール（马赛克卷）', singer: '初音未来', category: '日语' },
+                { id: 87, name: 'おじゃま虫（麻烦鬼）', singer: '镜音铃', category: '日语' },
+                { id: 88, name: '妄想税', singer: '初音未来', category: '日语' },
+                { id: 89, name: 'からくりピエロ（活动小丑）', singer: 'IA', category: '日语' },
+                { id: 90, name: 'From Y to Y', singer: '初音未来', category: '日语' },
+                { id: 91, name: 'Glow', singer: 'GUMI', category: '日语' },
+                { id: 92, name: 'ホシアイ（七夕）', singer: 'GUMI', category: '日语' },
+                { id: 93, name: 'Calc.', singer: '镜音铃、镜音连', category: '日语' },
+                { id: 94, name: 'Just be friends', singer: 'Megpoid', category: '日语' },
+                { id: 95, name: 'Tell your world', singer: '初音未来', category: '日语' },
+                { id: 96, name: '雨き声残響', singer: '初音未来', category: '日语' },
+                { id: 97, name: 'サマータイムレコード（夏令时记录）', singer: 'IA', category: '日语' },
+                { id: 98, name: '夕景イエスタデイ（夕景昨日）', singer: '米津玄师', category: '日语' },
+                { id: 99, name: '小夜子', singer: 'Aimer', category: '日语' },
+                { id: 100, name: 'ドーナツホール（甜甜圈洞）', singer: '鹿乃', category: '日语' },
+                { id: 101, name: '紅蓮華', singer: 'LiSA', category: '日语' },
+                { id: 102, name: 'ブルーバード（青鸟）', singer: '生物股长', category: '日语' },
+                { id: 103, name: '残酷な天使のデーゼ（残酷天使的行动纲领）', singer: '高桥洋子', category: '日语' },
+                { id: 104, name: '創聖のアクエリオン（创圣的大天使）', singer: 'AKINO', category: '日语' },
+                { id: 105, name: 'アイネクライネ（小小的我）', singer: '米津玄师', category: '日语' },
+                { id: 106, name: 'Lemon', singer: '米津玄师', category: '日语' },
+                { id: 107, name: '打ち上げ花火', singer: 'DAOKO、米津玄师', category: '日语' },
+                { id: 108, name: '夜に駆ける（向夜晚奔去）', singer: 'YOASOBI', category: '日语' },
+                { id: 109, name: '群青', singer: 'YOASOBI', category: '日语' },
+                { id: 110, name: 'アイドル（偶像）', singer: 'YOASOBI', category: '日语' },
+                { id: 111, name: 'ヤキモチ（吃醋）', singer: '高桥优', category: '日语' },
+                { id: 112, name: '銀猫', singer: '未知', category: '日语' },
+                { id: 113, name: '冬の花', singer: '宇多田光', category: '日语' },
+                { id: 114, name: 'シルエット（剪影）', singer: 'KANA-BOON', category: '日语' },
+                { id: 115, name: 'For you', singer: '未知', category: '日语' },
+                { id: 116, name: 'One last kiss', singer: '宇多田光', category: '日语' },
+                { id: 117, name: '砂の惑星', singer: '初音未来、米津玄师', category: '日语' },
+                { id: 118, name: 'マトリョシカ（俄罗斯套娃）', singer: 'GUMI、镜音铃', category: '日语' },
+                { id: 119, name: 'vivi', singer: '未知', category: '日语' },
+                { id: 120, name: 'メランコリーキッチン（忧郁厨房）', singer: '鹿乃', category: '日语' },
+                { id: 121, name: 'リンネ（轮回）', singer: 'GUMI', category: '日语' },
+                { id: 122, name: 'KICK BACK', singer: '米津玄师', category: '日语' },
+                { id: 123, name: 'パプリカ（红辣椒）', singer: 'Foorin', category: '日语' },
+                { id: 124, name: '君に届け（好想告诉你）', singer: 'flumpool', category: '日语' },
+                { id: 125, name: 'たぶん（大概）', singer: 'YOASOBI', category: '日语' },
+                { id: 126, name: '炎', singer: 'LiSA', category: '日语' },
+                { id: 127, name: 'ヨンジュウナナ（四十七）', singer: '未知', category: '日语' },
+                { id: 128, name: 'サリシノハラ（离去之原）', singer: '鹿乃', category: '日语' },
+                { id: 129, name: '独りんぼエンヴィー（孑然妒火）', singer: 'GUMI', category: '日语' },
+                { id: 130, name: 'オレンジ（Orange）', singer: '7!!', category: '日语' },
+                { id: 131, name: '上弦の月', singer: 'Aimer', category: '日语' },
+                { id: 132, name: 'Blessing', singer: 'Vocaloid 中文歌手合唱', category: '日语' },
+                { id: 133, name: 'Connecting', singer: '未知', category: '日语' },
+                { id: 134, name: '樱花樱花想见你', singer: 'RSP', category: '日语' },
+                { id: 135, name: 'BadBye', singer: '未知', category: '日语' },
+                { id: 136, name: '恋愛裁判', singer: 'GUMI', category: '日语' },
+                { id: 137, name: '小さな恋の歌（小小恋歌）', singer: 'MONGOL800', category: '日语' },
+                { id: 138, name: '恋', singer: '米津玄师', category: '日语' },
+                { id: 139, name: '二時間だけのバカンス（只有两小时的假期）', singer: '未知', category: '日语' },
+                { id: 140, name: 'マリーゴールド（金盏花）', singer: 'Aimer', category: '日语' },
+                { id: 141, name: '文学少年の憂鬱', singer: '米津玄师', category: '日语' },
+                { id: 142, name: 'アヤノの幸福理論（文乃的幸福理论）', singer: 'Jin、IA', category: '日语' },
+                { id: 143, name: 'ロスタイムメモリー（回忆补时）', singer: 'Jin、IA', category: '日语' },
+                { id: 144, name: 'カゲロウデイズ（阳炎days）', singer: 'Jin、IA', category: '日语' },
+                { id: 145, name: 'Sign', singer: 'FLOW', category: '日语' },
+                { id: 146, name: '遥か彼方', singer: 'FLOW', category: '日语' },
+                { id: 147, name: '太陽が似合うよ（太阳很适合你）', singer: '植田佳奈', category: '日语' },
+                { id: 148, name: '迷宮バタフライ（迷宫蝴蝶）', singer: '水树奈奈', category: '日语' },
+                { id: 149, name: 'PHANTOM MINDS', singer: '水树奈奈', category: '日语' },
+                { id: 150, name: 'プラチナ（白金）', singer: '坂本真绫', category: '日语' },
+                { id: 151, name: 'Overlap', singer: 'FLOW', category: '日语' },
+                { id: 152, name: 'Masked bitcH', singer: 'GUMI', category: '日语' },
+                { id: 153, name: '心做し（心理作用）', singer: 'GUMI', category: '日语' },
+                { id: 154, name: '透明哀歌', singer: 'Aimer', category: '日语' },
+                { id: 155, name: 'しわ（皱纹）', singer: '未知', category: '日语' },
+                { id: 156, name: '恋愛勇者', singer: '水树奈奈', category: '日语' },
+                { id: 157, name: 'Start', singer: '未知', category: '日语' },
+                { id: 158, name: 'Glide', singer: '未知', category: '日语' },
+                { id: 159, name: '夕立のリボン（雨落如带）', singer: '未知', category: '日语' },
+                { id: 160, name: '夏祭り', singer: 'Da Pump', category: '日语' },
+                { id: 161, name: '神のまにまに（神的随波逐流）', singer: 'GUMI、镜音铃', category: '日语' },
+                { id: 162, name: 'Planet', singer: 'Lambsey', category: '日语' },
+                { id: 163, name: '裏切りの夕焼け（背叛的晚霞）', singer: '米津玄师', category: '日语' },
+                { id: 164, name: 'モノクロのキス（黑白之吻）', singer: 'SID', category: '日语' },
+                { id: 165, name: 'Only my railgun', singer: 'fripSide', category: '日语' },
+                { id: 166, name: 'カラノココロ（空虚的心）', singer: 'ELISA', category: '日语' },
+                { id: 167, name: 'ホタルノヒカリ（萤之光）', singer: '生物股长', category: '日语' },
+                { id: 168, name: 'Distance', singer: '未知', category: '日语' },
+                { id: 169, name: 'さよならのかわりに（再见的代替）', singer: '未知', category: '日语' },
+                { id: 170, name: 'インタビュア（interviewer）', singer: '未知', category: '日语' },
+                { id: 171, name: 'Butterfly', singer: '和田光司', category: '日语' },
+                { id: 172, name: 'Legend of Mermaid', singer: '未知', category: '日语' },
+                { id: 173, name: 'Say So', singer: '未知', category: '日语' },
+                { id: 174, name: 'クリスマスソング（圣诞歌）', singer: 'back number', category: '日语' }
+            ],
+            lastUpdate: '2024-01-01',
+            title: '菱音RENNの歌单',
+            desc: '收藏喜欢的歌曲，记录心动的瞬间～ 双击页面解锁管理权限',
+            avatar: 'https://picsum.photos/200/200',
+            searchKeyword: '', // 新增搜索关键词状态
+            selectedCategory: 'all', // 新增分类筛选状态
+            sortType: 'asc' // 新增排序状态
+        };
+        // DOM元素
+        const elements = {
+            passwordModal: document.getElementById('passwordModal'),
+            passwordInput: document.getElementById('passwordInput'),
+            passwordError: document.getElementById('passwordError'),
+            confirmPassword: document.getElementById('confirmPassword'),
+            cancelPassword: document.getElementById('cancelPassword'),
+            customizeModal: document.getElementById('customizeModal'),
+            customTitle: document.getElementById('customTitle'),
+            customDesc: document.getElementById('customDesc'),
+            customPassword: document.getElementById('customPassword'),
+            avatarUpload: document.getElementById('avatarUpload'),
+            previewAvatar: document.getElementById('previewAvatar'),
+            avatarFileName: document.getElementById('avatarFileName'),
+            saveCustomize: document.getElementById('saveCustomize'),
+            cancelCustomize: document.getElementById('cancelCustomize'),
+            addSongModal: document.getElementById('addSongModal'),
+            songName: document.getElementById('songName'),
+            songSinger: document.getElementById('songSinger'),
+            songCategory: document.getElementById('songCategory'),
+            confirmAddSong: document.getElementById('confirmAddSong'),
+            cancelAddSong: document.getElementById('cancelAddSong'),
+            songList: document.getElementById('songList'),
+            songCount: document.getElementById('songCount'),
+            lastUpdate: document.getElementById('lastUpdate'),
+            emptySongTip: document.getElementById('emptySongTip'),
+            headerTitle: document.getElementById('headerTitle'),
+            headerDesc: document.getElementById('headerDesc'),
+            headerAvatar: document.getElementById('headerAvatar'),
+            customizeBtn: document.getElementById('customizeBtn'),
+            addSongBtn: document.getElementById('addSongBtn'),
+            viewModeBtn: document.getElementById('viewModeBtn'),
+            copyTempInput: document.getElementById('copyTempInput'),
+            songTableHeader: document.getElementById('songTableHeader'), // 表头元素
+            searchInput: document.getElementById('searchInput'), // 新增搜索输入框
+            searchNoResultTip: document.getElementById('searchNoResultTip') // 新增搜索无结果提示
+        };
+        // 初始化页面
+        function initPage() {
+            elements.headerTitle.textContent = state.title;
+            elements.headerDesc.textContent = state.desc;
+            elements.headerAvatar.src = state.avatar;
+            elements.previewAvatar.src = state.avatar;
+            elements.songList.innerHTML = ''; // 初始化时清空歌单容器
+            renderSongs();
+            updateSongCount();
+            updateLastUpdate();
+            checkEmptySongTip();
+            updateTableHeader(); // 初始化表头显示
+            bindSearchEvent(); // 绑定搜索事件
+        }
+        // 更新表头：管理员模式移动端显示类别列
+        function updateTableHeader() {
+            const categoryHeader = elements.songTableHeader.querySelector('.col-span-2'); // 类别列改为2列
+            if (state.isAdmin) {
+                categoryHeader.classList.remove('hidden'); // 管理员模式：类别列始终显示（含移动端）
+                categoryHeader.classList.add('md:table-cell');
+            } else {
+                categoryHeader.classList.add('hidden', 'md:block'); // 普通模式：移动端隐藏，桌面端显示
+            }
+        }
+        // 新增：过滤歌曲（根据搜索关键词+分类筛选）
+        function filterSongs() {
+            const keyword = state.searchKeyword.trim().toLowerCase();
+            const category = state.selectedCategory || 'all';
+            
+            return state.songs.filter(song => {
+                const matchKeyword = !keyword || 
+                    song.name.toLowerCase().includes(keyword) || 
+                    song.singer.toLowerCase().includes(keyword) || 
+                    (song.category && song.category.toLowerCase().includes(keyword));
+                const matchCategory = category === 'all' || (song.category && song.category === category);
+                return matchKeyword && matchCategory;
+            });
+        }
+        // 渲染歌曲列表：取消序号列，调整列宽占比
+        function renderSongs() {
+            const filteredSongs = filterSongs();
+            elements.songList.innerHTML = ''; // 渲染前清空容器
+            
+            // 显示/隐藏搜索无结果提示
+            elements.searchNoResultTip.classList.toggle('hidden', filteredSongs.length > 0 || !state.searchKeyword.trim());
+            
+            if (filteredSongs.length === 0) return;
+            
+            filteredSongs.forEach((song) => {
+                const songItem = document.createElement('div');
+                // 列宽调整为：歌曲名称6列、歌手4列、类别2列（原序号列1列取消）
+                songItem.className = 'song-item grid grid-cols-12 py-4 px-4 song-item-hover gap-2';
+                songItem.dataset.id = song.id;
+                
+                // 类别内容：适配2列宽度，优化溢出处理
+                const categoryContent = state.isAdmin 
+                    ? `<div class="col-span-2 flex items-center justify-between">
+                        <span class="text-gray-500 whitespace-normal truncate max-w-[60px] md:max-w-none">${song.category || '-'}</span>
+                        <button class="delete-song-btn text-red-500 hover:text-red-600 ml-1" title="删除歌曲">
+                            <i class="fa fa-trash"></i>
+                        </button>
+                      </div>`
+                    : `<div class="col-span-2 text-gray-500 table-cell whitespace-normal truncate max-w-[60px] md:max-w-none">${song.category || '-'}</div>`;
+                
+                songItem.innerHTML = `
+                    <!-- 取消序号列，歌曲名称占6列 -->
+                    <div class="col-span-6 pl-2 text-gray-800 font-medium table-cell whitespace-normal truncate max-w-[200px] md:max-w-none">
+                        ${song.name}
+                    </div>
+                    <!-- 歌手占4列 -->
+                    <div class="col-span-4 text-gray-600 table-cell whitespace-normal truncate max-w-[150px] md:max-w-none">
+                        ${song.singer}
+                    </div>
+                    ${categoryContent}
+                `;
+                
+                elements.songList.appendChild(songItem);
+            });
+            
+            // 绑定删除事件
+            bindSongActions();
+        }
+        // 绑定歌曲操作事件
+        function bindSongActions() {
+            if (state.isAdmin) {
+                document.querySelectorAll('.delete-song-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const songId = parseInt(this.closest('.song-item').dataset.id);
+                        if (confirm('确定要删除这首歌曲吗？')) {
+                            state.songs = state.songs.filter(song => song.id !== songId);
+                            renderSongs();
+                            updateSongCount();
+                            updateLastUpdate();
+                            checkEmptySongTip();
+                        }
+                    });
+                });
+            }
+        }
+        // 新增：绑定搜索事件
+        function bindSearchEvent() {
+            elements.searchInput.addEventListener('input', function() {
+                state.searchKeyword = this.value;
+                renderSongs(); // 输入时实时渲染过滤结果
+                checkEmptySongTip(); // 同步更新空歌单提示状态
+            });
+        }
+        // 更新歌曲总数
+        function updateSongCount() {
+            elements.songCount.textContent = state.songs.length;
+        }
+        // 更新最后更新时间
+        function updateLastUpdate() {
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+            state.lastUpdate = dateStr;
+            elements.lastUpdate.textContent = dateStr;
+        }
+        // 检查空歌单提示（搜索状态下不显示）
+        function checkEmptySongTip() {
+            const isEmpty = state.songs.length === 0;
+            const hasSearchKeyword = state.searchKeyword.trim().length > 0;
+            elements.emptySongTip.classList.toggle('hidden', !isEmpty || hasSearchKeyword);
+        }
+        // 切换管理员模式：同步更新表头和歌曲列表显示
+        function toggleAdminMode(isAdmin) {
+            state.isAdmin = isAdmin;
+            if (isAdmin) {
+                elements.customizeBtn.classList.remove('hidden');
+                elements.addSongBtn.classList.remove('hidden');
+                elements.viewModeBtn.innerHTML = '<i class="fa fa-lock mr-1"></i> 管理员模式';
+                elements.viewModeBtn.classList.remove('btn-primary');
+                elements.viewModeBtn.classList.add('btn-secondary');
+            } else {
+                elements.customizeBtn.classList.add('hidden');
+                elements.addSongBtn.classList.add('hidden');
+                elements.viewModeBtn.innerHTML = '<i class="fa fa-eye mr-1"></i> 仅查看模式';
+                elements.viewModeBtn.classList.remove('btn-secondary');
+                elements.viewModeBtn.classList.add('btn-primary');
+            }
+            updateTableHeader(); // 切换模式时更新表头
+            renderSongs(); // 重新渲染歌曲列表，确保类别栏显示正确
+        }
+        // 绑定所有页面事件
+        function bindEvents() {
+            // 双击页面唤醒密码框
+            document.addEventListener('dblclick', (e) => {
+                if (!state.isAdmin && e.target !== elements.passwordModal && !elements.passwordModal.contains(e.target)) {
+                    elements.passwordModal.classList.remove('hidden');
+                    elements.passwordInput.value = '';
+                    elements.passwordError.classList.add('hidden');
+                }
+            });
+            // 确认密码
+            elements.confirmPassword.addEventListener('click', () => {
+                const inputPwd = elements.passwordInput.value.trim();
+                if (inputPwd === state.password) {
+                    elements.passwordModal.classList.add('hidden');
+                    toggleAdminMode(true);
+                } else {
+                    elements.passwordError.classList.remove('hidden');
+                }
+            });
+            // 取消密码输入
+            elements.cancelPassword.addEventListener('click', () => {
+                elements.passwordModal.classList.add('hidden');
+                elements.passwordError.classList.add('hidden');
+            });
+            // 打开自定义设置
+            elements.customizeBtn.addEventListener('click', () => {
+                elements.customTitle.value = state.title;
+                elements.customDesc.value = state.desc;
+                elements.customPassword.value = state.password;
+                elements.previewAvatar.src = state.avatar;
+                elements.avatarFileName.textContent = '未选择文件';
+                elements.customizeModal.classList.remove('hidden');
+            });
+            // 保存自定义设置
+            elements.saveCustomize.addEventListener('click', () => {
+                state.title = elements.customTitle.value.trim() || '我的歌单';
+                state.desc = elements.customDesc.value.trim() || '收藏喜欢的歌曲～';
+                state.password = elements.customPassword.value.trim() || state.password;
+                elements.headerTitle.textContent = state.title;
+                elements.headerDesc.textContent = state.desc;
+                updateLastUpdate();
+                elements.customizeModal.classList.add('hidden');
+                alert('自定义设置保存成功！');
+            });
+            // 取消自定义设置
+            elements.cancelCustomize.addEventListener('click', () => {
+                elements.customizeModal.classList.add('hidden');
+            });
+            // 头像上传预览
+            elements.avatarUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    elements.avatarFileName.textContent = file.name;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const avatarUrl = event.target.result;
+                        elements.previewAvatar.src = avatarUrl;
+                        elements.headerAvatar.src = avatarUrl;
+                        state.avatar = avatarUrl;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            // 打开添加歌曲模态框
+            elements.addSongBtn.addEventListener('click', () => {
+                elements.songName.value = '';
+                elements.songSinger.value = '';
+                elements.songCategory.value = '';
+                elements.addSongModal.classList.remove('hidden');
+            });
+            // 取消添加歌曲
+            elements.cancelAddSong.addEventListener('click', () => {
+                elements.addSongModal.classList.add('hidden');
+            });
+            // 添加歌曲
+            elements.confirmAddSong.addEventListener('click', () => {
+                const name = elements.songName.value.trim();
+                const singer = elements.songSinger.value.trim();
+                if (!name || !singer) {
+                    alert('歌曲名称和歌手不能为空！');
+                    return;
+                }
+                const newSong = {
+                    id: Date.now(),
+                    name,
+                    singer,
+                    category: elements.songCategory.value.trim()
+                };
+                state.songs.push(newSong);
+                renderSongs();
+                updateSongCount();
+                updateLastUpdate();
+                checkEmptySongTip();
+                elements.addSongModal.classList.add('hidden');
+            });
+            // 退出管理员模式
+            elements.viewModeBtn.addEventListener('click', () => {
+                if (state.isAdmin) {
+                    if (confirm('确定要退出管理员模式吗？退出后所有更改仅当前会话有效')) {
+                        toggleAdminMode(false);
+                    }
+                }
+            });
+            // 点击模态框外部关闭
+            [elements.passwordModal, elements.customizeModal, elements.addSongModal].forEach(modal => {
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.classList.add('hidden');
+                        elements.passwordError.classList.add('hidden');
+                    }
+                });
+            });
+        }
+        // 初始化页面
+        window.addEventListener('DOMContentLoaded', () => {
+            initPage();
+            bindEvents();
+        });
+    </script>
+</body>
+</html>
